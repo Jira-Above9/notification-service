@@ -1,1 +1,73 @@
+package usecase
 
+import (
+	"time"
+)
+
+type NotificationUsecase struct {
+	maxRetries int
+	retryDelay time.Duration
+}
+
+func NewNotificationUsecase() *NotificationUsecase {
+	return &NotificationUsecase{
+		maxRetries: 3,
+		retryDelay: 2 * time.Second,
+	}
+}
+
+// SendWithRetry attempts to send notification with retries
+// BUG: Retries send the full notification again without checking idempotency
+// On network timeout, this causes duplicate emails to be sent on each retry
+// Missing: idempotency key check before each retry attempt
+func (n *NotificationUsecase) SendWithRetry(eventID, userID, email, eventType string) error {
+	var lastErr error
+
+	for attempt := 0; attempt < n.maxRetries; attempt++ {
+		// BUG: No check if notification was already successfully sent
+		// Should check sent_notifications table before retrying
+		// Missing: if alreadySent(eventID) { return nil }
+
+		err := n.dispatch(eventID, userID, email, eventType)
+		if err == nil {
+			// BUG: Should mark as sent here but doesn't
+			// Missing: markAsSent(eventID, userID)
+			return nil
+		}
+
+		lastErr = err
+
+		// BUG: Sleeps and retries even if email was already delivered
+		// A timeout doesn't mean the email wasn't sent — it may have been
+		// sent successfully but the ACK was lost. Retrying causes duplicates.
+		time.Sleep(n.retryDelay)
+	}
+
+	return lastErr
+}
+
+// dispatch sends the actual notification
+// BUG: Always sends without idempotency guard
+func (n *NotificationUsecase) dispatch(eventID, userID, email, eventType string) error {
+	// Simulated dispatch logic
+	// Missing: deduplication check against sent_notifications store
+	return nil
+}
+
+// SentNotification represents a record of a sent notification
+// This struct exists but is never used — the table is never queried
+type SentNotification struct {
+	EventID   string
+	UserID    string
+	SentAt    time.Time
+	EventType string
+}
+
+// alreadySent checks if notification was already sent for this event
+// BUG: This function is defined but NEVER CALLED anywhere
+// This is the root cause — the idempotency check exists but isn't used
+func alreadySent(eventID string) bool {
+	// Should query: SELECT COUNT(*) FROM sent_notifications WHERE event_id = eventID
+	// But this function is never invoked in SendWithRetry or NotificationHandler
+	return false
+}
