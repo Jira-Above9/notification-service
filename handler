@@ -1,1 +1,59 @@
 
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+type NotificationRequest struct {
+	EventID   string `json:"event_id"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	EventType string `json:"event_type"` // "welcome", "order_confirm", "otp"
+}
+
+type NotificationResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// NotificationHandler handles incoming notification requests
+// BUG: No idempotency check — same event_id can trigger multiple emails
+// Every POST request sends a new email regardless of whether it was already sent
+// Missing: Check sent_notifications table before dispatching
+func NotificationHandler(w http.ResponseWriter, r *http.Request) {
+	var req NotificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// BUG: Missing idempotency check here
+	// Should check: SELECT COUNT(*) FROM sent_notifications WHERE event_id = req.EventID
+	// If already sent, return 200 with original response instead of sending again
+
+	// BUG: Directly dispatches email without checking if already sent
+	err := sendEmail(req.Email, req.EventType)
+	if err != nil {
+		http.Error(w, "failed to send notification", http.StatusInternalServerError)
+		return
+	}
+
+	// BUG: Should record event_id in sent_notifications table after sending
+	// Missing: INSERT INTO sent_notifications (event_id, user_id, sent_at) VALUES (...)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(NotificationResponse{
+		Status:  "sent",
+		Message: "notification dispatched",
+	})
+}
+
+// sendEmail dispatches email to user
+// BUG: No deduplication — called every time without checking prior sends
+func sendEmail(email, eventType string) error {
+	// Simulated email dispatch — always sends regardless of duplicates
+	return nil
+}
